@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- 引入ECharts库 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- 引入外部CSS文件 -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/klinechart.js"></script>
+    </head>
+<body>
+    <div class="container">
+
+        
+        
+        <!-- 移除重复的搜索框 -->
+        <div class="table-container">
+            <!-- 搜索建议下拉框 -->
+            <div id="searchSuggestions" class="search-suggestions"></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th width="120px">
+                            <div class="search-wrapper">
+                                <input 
+                                    type="text" 
+                                    id="searchInput" 
+                                    placeholder="股票名称" 
+                                    class="search-input"
+                                    oninput="showSuggestions(this.value)"
+                                >
+                            </div>
+                        </th>
+                        <th>分时图</th>
+                        <th>价格</th>
+                        <th class="sortable" onclick="sortByChangePercentage()">涨幅</th>
+                        <th>代码</th>
+                        <th>市场</th>
+                        <th class="sortable" onclick="sortByDaysBoards()">几天几板</th>
+                        <th>解读</th>
+                        <th>
+                            <input type="text" id="plateFilter" placeholder="搜索题材" oninput="filterByPlate(this.value)" class="filter-input">
+                        </th>
+                        <th>
+                            <input type="date" id="dateFilter" placeholder="选择日期" onchange="filterByDate(this.value)" class="filter-input">
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="stockTableBody">
+                    {% if stocks %}
+                        {% for stock in stocks %}
+                            <tr>
+                                <td><a href="https://xuangutong.com.cn/stock/{{ stock.code_part }}.{{ stock.market|upper }}" target="_blank" class="stock-name-link{% if stock.code_part.startswith('688') %} blue-text{% elif stock.code_part.startswith('3') or stock.code_part.startswith('68') %} orange-text{% endif %}">{{ stock.name }}</a></td>
+                                <td><div class="time-chart" data-code="{{ stock.code_part }}"></div></td>
+                                <td class="price"></td>
+                                <td class="change-percentage"></td>
+                                <td class="{% if stock.code_part.startswith('3') %}orange-code{% endif %}">{{ stock.code_part }}</td>
+                                <td>{{ stock.market }}</td>
+                                <td>{% if stock.m_days_n_boards %}
+                                    <span class="days-boards-tag">{{ stock.m_days_n_boards }}</span>
+                                {% else %}{{ stock.m_days_n_boards }}{% endif %}</td>
+                                <td>{{ stock.description }}</td>
+                                <td>{{ stock.plates }}</td>
+                                <td>{{ stock.date }}</td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="9" class="no-data">暂无股票数据，请点击"抓取股票数据"按钮获取数据</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- 右侧题材统计表 - 移到container内部 -->
+        <div class="sidebar">
+            <div class="plate-stats-container">
+
+                <div class="stats-content">
+                    <table id="plateStatsTable" class="plate-stats-table">
+                        <thead class="plate-stats-table th">
+                            <tr>
+                                <th>题材名称</th>
+                                <th>数量</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plateStatsBody">
+                            <!-- JavaScript将动态填充统计数据 -->
+                        </tbody>
+                    </table>
+                    <!-- 搜索框和按钮 -->
+                    <div class="plate-search-container">
+                        <input type="text" id="plateSearchInput" placeholder="搜索所有题材" class="plate-search-input">
+                        <button onclick="searchPlate()" class="plate-search-button">GO</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 移除数据来源和旋极宝的脚本 -->
+    <script>
+        // 确保在页面完全加载后移除任何包含"数据来源"或"旋极宝"的元素
+        window.addEventListener('load', function() {
+            // 查找并移除包含"数据来源"的元素
+            const elementsWithDataSource = document.querySelectorAll('*');
+            elementsWithDataSource.forEach(element => {
+                if (element.textContent && (element.textContent.includes('数据来源') || element.textContent.includes('旋极宝'))) {
+                    element.remove();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+<!-- K线图弹出窗口 -->
+<div id="kLinePopup" class="k-line-popup">
+    <div class="popup-header">
+        <span id="popupStockName" class="popup-title">K线图</span>
+        <span class="popup-close" onclick="closeKLinePopup()">×</span>
+    </div>
+    <!-- 弹窗内容 -->
+    <div class="popup-content">
+        <!-- K线图容器 -->
+        <div id="kLineChart" style="width: 100%; height: 400px;"></div>
+        <!-- 成交量图容器 -->
+        <div id="volumeChart" style="width: 100%; height: 150px;"></div>
+    </div>
+</div>
+
+<!-- 弹窗样式 -->
+<style>
+.k-line-popup {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 800px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    display: none;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+.popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.popup-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.popup-close {
+    font-size: 24px;
+    color: #999;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.popup-close:hover {
+    color: #333;
+}
+
+.popup-content {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chart-left-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chart-right-column {
+    flex: 1;
+    min-width: 0;
+}
+
+.chart-container {
+    width: 100%;
+    height: 250px;
+    margin-bottom: 10px;
+}
+
+#volumeChart {
+    height: 120px;
+}
+
+/* 添加指针样式，提示可悬停 */
+.stock-name-link {
+    cursor: pointer;
+}
+</style>
+
+
+
+
+
+
